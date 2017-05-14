@@ -64,7 +64,7 @@ renameName ours we n
     | Scoped (GlobalSymbol s _) _ <- ann n
     = n
     | Scoped (ScopeError e) _ <- ann n
-    = error (show e)
+    = n -- not our name, leave unmodified
     | otherwise
     = mangle we n
 --renameName ours we n = error (prettyPrint n ++" : " ++ show (ann n))
