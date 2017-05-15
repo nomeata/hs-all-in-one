@@ -15,13 +15,16 @@ main = do
     filenames <- getArgs
     modules <- for filenames $ \fn -> fromParseResult <$> parseFile fn
     let ours = map getName modules
-    base <- loadBase
-    let env = resolve modules base
+
+    -- No need to load base: We will leave anything unresolved alone anyways
+    -- base <- loadBase
+
+    let env = resolve modules mempty
     let mangled =
             (()<$) .
             rename ours .
             removeImports ours .
-            ((()<$) <$>) .
+            -- ((()<$) <$>) .
             annotate env
             <$> modules
     let combined = combine mangled
@@ -43,10 +46,10 @@ combine mods = Module () (Just (ModuleHead () (ModuleName () "Main") Nothing Not
     imps  = nub $ concat [ imps | Module _ _ _ imps _ <- mods ]
     decls = concat [ decls | Module _ _ _ _ decls <- mods ]
 
-rename :: [String] -> Module (Scoped ()) -> Module (Scoped ())
+rename :: [String] -> Module (Scoped SrcSpanInfo) -> Module (Scoped SrcSpanInfo)
 rename ours x = everywhere (mkT (renameName ours (getName x)) `extT` renameQName ours) x
 
-renameQName :: [String] -> QName (Scoped ()) -> QName (Scoped ())
+renameQName :: [String] -> QName (Scoped SrcSpanInfo) -> QName (Scoped SrcSpanInfo)
 renameQName ours (Qual l _ n)
     | Scoped (GlobalSymbol s _) _ <- l
     , let m = getName' (symbolModule s)
@@ -55,18 +58,21 @@ renameQName ours (Qual l _ n)
 renameQName _ qn = qn
 
 
-renameName :: [String] -> String -> Name (Scoped ()) -> Name (Scoped ())
+renameName :: [String] -> String -> Name (Scoped SrcSpanInfo) -> Name (Scoped SrcSpanInfo)
 renameName ours we n
+    | traceShow n False = undefined
     | Scoped (GlobalSymbol s _) _ <- ann n
     , let m = getName' (symbolModule s)
     , m `elem` ours
-    = mangle m (Scoped None () <$ symbolName s)
+    = mangle m (ann n) (symbolName s)
     | Scoped (GlobalSymbol s _) _ <- ann n
     = n
     | Scoped (ScopeError e) _ <- ann n
     = n -- not our name, leave unmodified
+    | Scoped None _ <- ann n
+    = n -- not a normal name, leave unmodified
     | otherwise
-    = mangle we n
+    = mangle we (ann n) n
 --renameName ours we n = error (prettyPrint n ++" : " ++ show (ann n))
 
 modOf :: String -> Scoped () -> Maybe String
@@ -90,7 +96,7 @@ dotToUS = concatMap go
 tosymbol :: Int -> String
 tosymbol = map ("⚛☃⚾♛♬☏⚒☸☀☮☘☭∞∃" !!) . map (subtract (ord '0')) . map ord . show
 
-mangle :: String -> Name l2 -> Name l2
-mangle _ i@(Ident  l "main") = i -- leave main in place
-mangle m (Ident  l s) =  Ident l  $ doubleUS s ++ "_" ++ dotToUS (doubleUS m)
-mangle m (Symbol l s) =  Symbol l $ doubleCol s ++ ":" ++ tosymbol (hash m)
+mangle :: String -> l2 -> Name l1 -> Name l2
+mangle _ l i@(Ident _ "main") = l <$ i -- leave main in place
+mangle m l (Ident  _ s) =  Ident l  $ doubleUS s ++ "_" ++ dotToUS (doubleUS m)
+mangle m l (Symbol _ s) =  Symbol l $ doubleCol s ++ ":" ++ tosymbol (hash m)
