@@ -60,7 +60,6 @@ renameQName _ qn = qn
 
 renameName :: [String] -> String -> Name (Scoped SrcSpanInfo) -> Name (Scoped SrcSpanInfo)
 renameName ours we n
-    | traceShow n False = undefined
     | Scoped (GlobalSymbol s _) _ <- ann n
     , let m = getName' (symbolModule s)
     , m `elem` ours
