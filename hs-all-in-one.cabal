@@ -21,5 +21,6 @@ executable hs-all-in-one
                        hse-cpp ^>=0.2,
                        syb ^>=0.7.2.2,
                        hashable ^>=1.3.5.0,
-                       containers, mtl
+                       containers, mtl, megaparsec
+  other-modules: EnvFromTxt
   default-language:    Haskell2010

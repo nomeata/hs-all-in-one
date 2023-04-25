@@ -20,6 +20,13 @@ import Data.Hashable
 import Control.Monad
 import Control.Monad.State.Strict
 
+import EnvFromTxt
+
+packageTxtFiles =
+    [ "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/base-4.15.1.0/base.txt"
+    , "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/containers-0.6.4.1/containers.txt"
+    ]
+
 cpphsOptions = defaultCpphsOptions
     { includes =
         [ "./.hadrian_ghci/stage0/compiler/build/"
@@ -53,7 +60,7 @@ main = do
     let ours = S.fromList $ map getName modules
     unless (S.size ours == length modules) $ hPutStrLn stderr "Warning: Duplicated module names"
 
-    env0 <- loadBase
+    env0 <- mconcat <$> mapM load packageTxtFiles
     let set_funs = [ "empty", "singleton", "member", "fromList", "isSubsetOf"
                    , "filter", "foldl'", "foldr", "elems", "size", "null"]
     let map_funs = [ "toList","fromList", "keys", "elems", "filter"
@@ -61,7 +68,7 @@ main = do
                    , "foldl'", "mapWithKey", "map", "isSubmapOf", "intersection"
                    , "difference", "unionWithKey", "union", "adjust", "alter"
                    , "delete", "insert", "singleton", "empty", "findWithDefault"
-                   , "lookup", "member", "size", "null", "toAscList"
+                   , "lookup", "member", "size", "null", "toAscList", "findMax", "findMin"
                    ]
     let env1 = M.unionsWith (<>) $ env0 :
           [ M.singleton (ModuleName () m) [Value (ModuleName () m) (Ident () v) | v <- vs]
@@ -73,11 +80,19 @@ main = do
               , ("Data.Set", set_funs)
               , ("Data.IntSet", set_funs)
               , ("Control.Monad.Trans.State.Lazy", ["StateT", "modify'"])
-              , ("Control.Monad.Trans.State.Strict", ["StateT", "modify'"])
+              , ("Control.Monad.Trans.State.Strict", ["State", "modify'"])
               , ("Control.Monad.Trans.State", ["StateT", "modify'"])
               , ("Control.Monad.Trans.Class", ["lift"])
-              , ("Data.List.NonEmpty", ["groupWith"])
-              , ("Array", ["accumArray"])
+              , ("Data.List.NonEmpty", ["groupWith", "iterate"])
+              , ("Array", ["accumArray", "array"])
+              , ("Data.Array.Unboxed", ["accumArray"])
+              ]
+          ] ++
+          [ M.singleton (ModuleName () m) [Data (ModuleName () m) (Ident () v) | v <- vs]
+          | (m,vs) <-
+              [ ("Control.Monad.Trans.State.Lazy", ["StateT"])
+              , ("Control.Monad.Trans.State.Strict", ["StateT"])
+              , ("Control.Monad.Trans.State", ["StateT"])
               ]
           ]
 
