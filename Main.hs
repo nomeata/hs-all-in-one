@@ -54,8 +54,34 @@ main = do
     unless (S.size ours == length modules) $ hPutStrLn stderr "Warning: Duplicated module names"
 
     env0 <- loadBase
-    let env = resolve modules env0
+    let set_funs = [ "empty", "singleton", "member", "fromList", "isSubsetOf"
+                   , "filter", "foldl'", "foldr", "elems", "size", "null"]
+    let map_funs = [ "toList","fromList", "keys", "elems", "filter"
+                   , "filterWithKeys", "foldlWithKey'", "foldMapWithKey", "foldr"
+                   , "foldl'", "mapWithKey", "map", "isSubmapOf", "intersection"
+                   , "difference", "unionWithKey", "union", "adjust", "alter"
+                   , "delete", "insert", "singleton", "empty", "findWithDefault"
+                   , "lookup", "member", "size", "null", "toAscList"
+                   ]
+    let env1 = M.unionsWith (<>) $ env0 :
+          [ M.singleton (ModuleName () m) [Value (ModuleName () m) (Ident () v) | v <- vs]
+          | (m,vs) <-
+              [ ("Data.Map", map_funs)
+              , ("Data.IntMap", map_funs)
+              , ("Data.Map.Strict", map_funs)
+              , ("Data.IntMap.Strict", map_funs)
+              , ("Data.Set", set_funs)
+              , ("Data.IntSet", set_funs)
+              , ("Control.Monad.Trans.State.Lazy", ["StateT", "modify'"])
+              , ("Control.Monad.Trans.State.Strict", ["StateT", "modify'"])
+              , ("Control.Monad.Trans.State", ["StateT", "modify'"])
+              , ("Control.Monad.Trans.Class", ["lift"])
+              , ("Data.List.NonEmpty", ["groupWith"])
+              , ("Array", ["accumArray"])
+              ]
+          ]
 
+    let env = resolve modules env1
 
     -- Do not annotate imports, does not work well with partial type information about base
     let imports =
@@ -134,6 +160,7 @@ rename ours x =
     everywhere (mkT (renameName ours (getName x)) `extT` unqualLocalQName ours) $
     everywhere (mkT fixGadtDecl) $
     everywhere (mkT fixDecl) $
+    everywhere (mkT fixBinds) $
     x
 
 unqualLocalQName :: S.Set String -> QName (Scoped SrcSpanInfo) -> QName (Scoped SrcSpanInfo)
@@ -142,6 +169,11 @@ unqualLocalQName ours (Qual l _ n)
     , let m = getName' (symbolModule s)
     , m `S.member` ours
     = UnQual l n
+unqualLocalQName ours (Qual l _ n)
+    | Scoped (GlobalSymbol s _) _ <- l
+    , let m = unInternalize $ getName' (symbolModule s)
+    , m `S.notMember` ours
+    = Qual l (ModuleName l m) n
 unqualLocalQName ours (UnQual l n)
     | Scoped (GlobalSymbol s _) _ <- l
     , let m = unInternalize $ getName' (symbolModule s)
@@ -174,6 +206,7 @@ fixGadtDecl (GadtDecl l (Ident (Scoped None ss) s) a b c d)
          =  (GadtDecl l (Ident (Scoped ValueBinder ss) s) a b c d)
 fixGadtDecl g = g
 
+
 fixDecl :: Decl (Scoped SrcSpanInfo) -> Decl (Scoped SrcSpanInfo)
 fixDecl (SpecSig l a (UnQual l2 (Ident (Scoped None ss) n)) ts)
       = (SpecSig l a (UnQual l2 (Ident (Scoped ValueBinder ss) n)) ts)
@@ -182,6 +215,15 @@ fixDecl (InlineSig l a b (UnQual l2 (Ident (Scoped None ss) n)))
 fixDecl (AnnPragma l (Ann l2 (Ident (Scoped None ss) n) e))
       = (AnnPragma l (Ann l2 (Ident (Scoped ValueBinder ss) n) e))
 fixDecl d = d
+
+fixBinds :: Binds (Scoped SrcSpanInfo) -> Binds (Scoped SrcSpanInfo) 
+fixBinds (BDecls l ds) = BDecls l (map go ds)
+  where
+    go (TypeSig l ns t) = (TypeSig l (goN <$> ns) t)
+    go d = d
+    goN (Ident (Scoped _ ss) n) = Ident (Scoped ValueBinder ss) n
+    goN i = i
+fixBinds b = b
 
 
 modOf :: String -> Scoped () -> Maybe String
