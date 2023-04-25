@@ -25,6 +25,9 @@ import EnvFromTxt
 packageTxtFiles =
     [ "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/base-4.15.1.0/base.txt"
     , "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/containers-0.6.4.1/containers.txt"
+    , "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/bytestring-0.10.12.1/bytestring.txt"
+    , "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/array-0.5.4.0/array.txt"
+    , "/nix/store/zcbmzz2drq5cii4ikqynk163v7cg8z97-ghc-9.0.2-doc/share/doc/ghc/html/libraries/transformers-0.5.6.2/transformers.txt"
     ]
 
 cpphsOptions = defaultCpphsOptions
@@ -60,7 +63,16 @@ main = do
     let ours = S.fromList $ map getName modules
     unless (S.size ours == length modules) $ hPutStrLn stderr "Warning: Duplicated module names"
 
-    env0 <- mconcat <$> mapM load packageTxtFiles
+    envs <- mapM load packageTxtFiles
+    envBase <- loadBase
+    let env1 = M.unionsWith (<>) $ envs -- ++ [envBase]
+    let env2 = M.fromList
+                [ (ModuleName () "Data.Map", env1 M.! (ModuleName () "Data.Map.Lazy"))
+                , (ModuleName () "Data.IntMap", env1 M.! (ModuleName () "Data.IntMap.Lazy"))
+                , (ModuleName () "Prelude", envBase M.! (ModuleName () "Prelude"))
+                ] <> env1
+
+    {-
     let set_funs = [ "empty", "singleton", "member", "fromList", "isSubsetOf"
                    , "filter", "foldl'", "foldr", "elems", "size", "null"]
     let map_funs = [ "toList","fromList", "keys", "elems", "filter"
@@ -95,8 +107,9 @@ main = do
               , ("Control.Monad.Trans.State", ["StateT"])
               ]
           ]
+    -}
 
-    let env = resolve modules env1
+    let env = resolve modules env2
 
     -- Do not annotate imports, does not work well with partial type information about base
     let imports =
