@@ -66,10 +66,19 @@ main = do
     envs <- mapM load packageTxtFiles
     envBase <- loadBase
     let env1 = M.unionsWith (<>) $ envs -- ++ [envBase]
+    let dataList = M.fromList [ (symbolName s, s) | s <- env1 M.! (ModuleName () "Data.List") ]
     let env2 = M.fromList
                 [ (ModuleName () "Data.Map", env1 M.! (ModuleName () "Data.Map.Lazy"))
                 , (ModuleName () "Data.IntMap", env1 M.! (ModuleName () "Data.IntMap.Lazy"))
-                , (ModuleName () "Prelude", envBase M.! (ModuleName () "Prelude"))
+                , (ModuleName () "Prelude",
+                    [ s'
+                    | s <- envBase M.! (ModuleName () "Prelude")
+                    , let s' = case s of
+                                Value m n
+                                    | Just s' <- M.lookup (symbolName s) dataList
+                                    -> s'
+                                _ -> s
+                    ])
                 ] <> env1
 
     {-
@@ -187,7 +196,6 @@ rename :: S.Set String -> Module (Scoped SrcSpanInfo) -> Module (Scoped SrcSpanI
 rename ours x =
     everywhere (mkT (renameName ours (getName x)) `extT` unqualLocalQName ours) $
     everywhere (mkT fixGadtDecl) $
-    everywhere (mkT fixDecl) $
     everywhere (mkT fixBinds) $
     x
 
@@ -214,7 +222,12 @@ renameName ours we n =
     let n' = renameName' ours we n
     in n' -- traceShow (n,n') n'
 
+renameName' :: S.Set String -> String -> Name (Scoped SrcSpanInfo) -> Name (Scoped SrcSpanInfo)
 renameName' ours we n
+    | Ident (Scoped (ScopeError (EAmbiguous _ (s:_))) l) i <- n
+    = renameName ours we (Ident (Scoped (GlobalSymbol s (Qual () (symbolModule s) (Ident () i))) l) i)
+    | Symbol (Scoped (ScopeError (EAmbiguous _ (s:_))) l) i <- n
+    = renameName ours we (Symbol (Scoped (GlobalSymbol s (Qual () (symbolModule s) (Symbol () i))) l) i)
     | Scoped (GlobalSymbol s _) _ <- ann n
     , let m = getName' (symbolModule s)
     , m `S.member` ours
@@ -235,15 +248,6 @@ fixGadtDecl (GadtDecl l (Ident (Scoped None ss) s) a b c d)
 fixGadtDecl g = g
 
 
-fixDecl :: Decl (Scoped SrcSpanInfo) -> Decl (Scoped SrcSpanInfo)
-fixDecl (SpecSig l a (UnQual l2 (Ident (Scoped None ss) n)) ts)
-      = (SpecSig l a (UnQual l2 (Ident (Scoped ValueBinder ss) n)) ts)
-fixDecl (InlineSig l a b (UnQual l2 (Ident (Scoped None ss) n)))
-      = (InlineSig l a b (UnQual l2 (Ident (Scoped ValueBinder ss) n)))
-fixDecl (AnnPragma l (Ann l2 (Ident (Scoped None ss) n) e))
-      = (AnnPragma l (Ann l2 (Ident (Scoped ValueBinder ss) n) e))
-fixDecl d = d
-
 fixBinds :: Binds (Scoped SrcSpanInfo) -> Binds (Scoped SrcSpanInfo) 
 fixBinds (BDecls l ds) = BDecls l (map go ds)
   where
@@ -252,7 +256,6 @@ fixBinds (BDecls l ds) = BDecls l (map go ds)
     goN (Ident (Scoped _ ss) n) = Ident (Scoped ValueBinder ss) n
     goN i = i
 fixBinds b = b
-
 
 modOf :: String -> Scoped () -> Maybe String
 modOf we (Scoped (GlobalSymbol s _) _) = Just $ getName' (symbolModule s)
